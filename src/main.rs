@@ -85,6 +85,12 @@ fn categorise(event: &DebouncedEvent) {
 
 fn get_dir_name(path: &str) -> String {
     let extension = path.split(".").collect::<Vec<&str>>();
+    if extension.len() < 2 {
+        // Handle if file lacks extension
+        return "scripts".to_string();
+    } else if extension[0] == "." {
+        // TODO find elegant way to handle hidden files
+    }
     return extension.last().unwrap().to_string();
 }
 
