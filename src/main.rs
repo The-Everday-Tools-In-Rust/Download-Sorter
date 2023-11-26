@@ -1,44 +1,81 @@
 // Simple program to sort newly created files into appropriate subdirectories
 
-use std::{env, fs, io};
-use std::fs::{create_dir_all, rename, read_dir};
-use std::io::Error;
+use std::env::current_exe;
+use std::fs::{create_dir_all, rename, read_dir, File, metadata};
+use std::io::{Write, stdin, ErrorKind::{NotFound, AlreadyExists}};
 use std::ops::Not;
-
+use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::channel;
 use std::time::Duration;
-use std::io::ErrorKind::{NotFound, AlreadyExists};
-use std::panic::catch_unwind;
-use log::info;
+use std::thread;
 
-use notify::{EventKind, RecursiveMode, Watcher};
-use notify::event::CreateKind;
+use log::{info, LevelFilter};
+
+use chrono::Utc;
+
+use error_chain::{ChainedError, error_chain};
+
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Config, Root};
+
+use notify::{EventKind, event::CreateKind, RecursiveMode, Watcher};
 use notify_debouncer_full::{DebouncedEvent, new_debouncer};
 
 
 fn main() {
-    let watch_dir = parse_cli_args();
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let watch_dir = Path::new(&watch_dir);
-    // categorize_existing_files(watch_dir);
+    configure_logging();
+    let executable = current_exe().expect("Unable to Get Script Path");
+    let binary_path = executable.to_str().expect("Unable to get Script Path");
 
-    if let Err(error) = watch(watch_dir) {
-        log::error!("Error: {error:?}");
-    }
+    create_and_load_mac_service(binary_path, "homebrew.mxcl.downloads_sorter");
+
+    let pth = parse_cli_args();
+
+    _ = thread::spawn(move || {
+        let res = watch(Path::new(&pth));
+        match res {
+            Ok(()) => {}
+            Err(error) => info!("Error: {error:?}"),
+        }
+    });
+}
+
+fn configure_logging() {
+    let base_path_str = "~/Library/Logs/Homebrew/file_sorter_logs";
+    create_dir_all(Path::new(shellexpand::tilde(base_path_str).as_ref())).expect("Unable to create Log Directories");
+
+    let full_log_path = format!("{}/sorter_{}.txt", base_path_str, Utc::now().format("%Y%m%d_%H%M%S"));
+    let log_path_extended = shellexpand::tilde(&full_log_path);
+    let log_path = Path::new(log_path_extended.as_ref());
+
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build(log_path).expect("Error(001) Initializing logger");
+
+    let config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder()
+            .appender("logfile")
+            .build(LevelFilter::Info)).expect("Error(002) Initializing logger");
+
+    log4rs::init_config(config).expect("Error(003) Initializing logger");
 }
 
 fn parse_cli_args() -> String {
     let mut path_input = String::new();
 
     loop {
-        println!("Enter a valid macOS path: >>> ");
+        println!("Welcome to FileSorter-Rs ");
+        println!("Enter a valid macOS path to track: >>> ");
 
-        match io::stdin().read_line(&mut path_input) {
+        match stdin().read_line(&mut path_input) {
             Ok(_) => {
                 path_input = path_input.trim().to_string();
 
-                if Path::new(&path_input).is_absolute() && fs::metadata(&path_input).is_ok() {
+                if Path::new(&path_input).is_absolute() && metadata(&path_input).is_ok() {
                     break;
                 } else {
                     println!("Invalid path: '{}'", path_input);
@@ -68,13 +105,13 @@ fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
         .cache()
         .add_root(path.as_ref(), RecursiveMode::NonRecursive);
 
-    info!("Began watching selected Directory:  {}", path.as_ref().display());
+    info!("Began watching selected Directory:  {path}", path = path.as_ref().display());
     for result in rx {
         match result {
             Ok(events) => events.iter().for_each(|event| categorise(event, path.as_ref())),
             Err(errors) => log::error!("{errors:?}")
         }
-    }
+    };
 
     Ok(())
 }
@@ -121,7 +158,7 @@ fn rename_and_move(watch_dir: &Path, file_path: &Path) {
 }
 
 fn handle_rename(from_dir: &Path, to_dir: &PathBuf) {
-    let rename_res = rename(from_dir, to_dir).map_err(|err| Error::new(err.kind(), err.to_string()));
+    let rename_res = rename(from_dir, to_dir).map_err(|err| std::io::Error::new(err.kind(), err.to_string()));
 
     match rename_res {
         Ok(()) => {}
@@ -144,3 +181,49 @@ fn handle_rename(from_dir: &Path, to_dir: &PathBuf) {
     }
 }
 
+
+fn create_and_load_mac_service(binary_path: &str, service_id: &str) {
+    // Define the path for the plist file
+    let plist_path = format!("~/Library/LaunchAgents/{}.plist", service_id);
+    let expanded_plist_path = shellexpand::tilde(&plist_path);
+
+    // Create the plist content
+    let plist_content = format!(r#"<?xml version="1.0" encoding="UTF]]]]]]]-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{service_id}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>{binary_path}</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+</dict>
+</plist>
+"#, service_id = service_id, binary_path = binary_path);
+
+    // Use launchctl to load the plist
+    if Path::new(&*expanded_plist_path).exists() {
+        Command::new("launchctl")
+            .args(&["load", "-w", &expanded_plist_path.to_string()])
+            .output().expect("Error running launchtl");
+    } else {
+        // Write the plist file
+        let mut file = File::create(&*expanded_plist_path).unwrap();
+        let _ = file.write_all(plist_content.as_bytes());
+        _ = create_and_load_mac_service(binary_path, service_id);
+    }
+
+}
+
+
+
+error_chain! {
+    foreign_links {
+        Io(std::io::Error);
+        LogConfig(log4rs::config::Errors);
+        SetLogger(log::SetLoggerError);
+    }
+}

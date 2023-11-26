@@ -10,8 +10,9 @@ the file extensions
 
 ## TODOs
 
-1. [ ] Write Tests
-2. [ ] Build for Cross Platform
+1. [X] MVP
+2. [ ] Build for Linux & Windows
 3. [ ] Handle more Scenarios
 4. [ ] Categorise pictures according to dates
-5. [x] MVP
+5. [ ] Write Tests
+6. [ ] CLI Help message
