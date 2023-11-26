@@ -1,8 +1,10 @@
 // Simple program to sort newly created files into appropriate subdirectories
 
+mod cli;
+
 use std::env::current_exe;
-use std::fs::{create_dir_all, rename, read_dir, File, metadata};
-use std::io::{Write, stdin, ErrorKind::{NotFound, AlreadyExists}};
+use std::fs::{create_dir_all, File, read_dir, rename};
+use std::io::{ErrorKind::{AlreadyExists, NotFound}, Write};
 use std::ops::Not;
 use std::panic::catch_unwind;
 use std::path::{Path, PathBuf};
@@ -21,18 +23,21 @@ use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
 
-use notify::{EventKind, event::CreateKind, RecursiveMode, Watcher};
+use notify::{event::CreateKind, EventKind, RecursiveMode, Watcher};
 use notify_debouncer_full::{DebouncedEvent, new_debouncer};
 
+const PLIST_PATH: &str = "~/Library/LaunchAgents";
+const SERVICE_ID: &str = "homebrew.mxcl.downloads_sorter";
+const BASE_LOG_PATH: &str = "~/Library/Logs/Homebrew/file_sorter_logs";
 
 fn main() {
     configure_logging();
     let executable = current_exe().expect("Unable to Get Script Path");
     let binary_path = executable.to_str().expect("Unable to get Script Path");
 
-    create_and_load_mac_service(binary_path, "homebrew.mxcl.downloads_sorter");
+    create_and_load_mac_service(binary_path, SERVICE_ID);
 
-    let pth = parse_cli_args();
+    let pth = cli::parse_path_input();
 
     _ = thread::spawn(move || {
         let res = watch(Path::new(&pth));
@@ -44,10 +49,9 @@ fn main() {
 }
 
 fn configure_logging() {
-    let base_path_str = "~/Library/Logs/Homebrew/file_sorter_logs";
-    create_dir_all(Path::new(shellexpand::tilde(base_path_str).as_ref())).expect("Unable to create Log Directories");
+    create_dir_all(Path::new(shellexpand::tilde(BASE_LOG_PATH).as_ref())).expect("Unable to create Log Directories");
 
-    let full_log_path = format!("{}/sorter_{}.txt", base_path_str, Utc::now().format("%Y%m%d_%H%M%S"));
+    let full_log_path = format!("{}/sorter_{}.txt", BASE_LOG_PATH, Utc::now().format("%Y%m%d_%H%M%S"));
     let log_path_extended = shellexpand::tilde(&full_log_path);
     let log_path = Path::new(log_path_extended.as_ref());
 
@@ -62,30 +66,6 @@ fn configure_logging() {
             .build(LevelFilter::Info)).expect("Error(002) Initializing logger");
 
     log4rs::init_config(config).expect("Error(003) Initializing logger");
-}
-
-fn parse_cli_args() -> String {
-    let mut path_input = String::new();
-
-    loop {
-        println!("Welcome to FileSorter-Rs ");
-        println!("Enter a valid macOS path to track: >>> ");
-
-        match stdin().read_line(&mut path_input) {
-            Ok(_) => {
-                path_input = path_input.trim().to_string();
-
-                if Path::new(&path_input).is_absolute() && metadata(&path_input).is_ok() {
-                    break;
-                } else {
-                    println!("Invalid path: '{}'", path_input);
-                }
-            }
-            Err(error) => println!("error: {error}"),
-        }
-    }
-
-    return path_input;
 }
 
 fn watch<P: AsRef<Path>>(path: P) -> notify::Result<()> {
@@ -184,7 +164,7 @@ fn handle_rename(from_dir: &Path, to_dir: &PathBuf) {
 
 fn create_and_load_mac_service(binary_path: &str, service_id: &str) {
     // Define the path for the plist file
-    let plist_path = format!("~/Library/LaunchAgents/{}.plist", service_id);
+    let plist_path = format!("{}/{}.plist", PLIST_PATH, service_id);
     let expanded_plist_path = shellexpand::tilde(&plist_path);
 
     // Create the plist content
@@ -215,7 +195,6 @@ fn create_and_load_mac_service(binary_path: &str, service_id: &str) {
         let _ = file.write_all(plist_content.as_bytes());
         _ = create_and_load_mac_service(binary_path, service_id);
     }
-
 }
 
 
