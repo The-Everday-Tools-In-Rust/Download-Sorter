@@ -1,6 +1,7 @@
 use std::io::stdin;
 use std::path::{Path, PathBuf};
 use std::fs::metadata;
+use std::ops::Deref;
 use clap::Parser;
 
 #[derive(Parser)]
@@ -13,19 +14,19 @@ struct Cli {
 }
 
 
-fn parse_cli_args() -> & 'static Path {
+fn parse_cli_args() -> &'static Path {
     let cli = Cli::parse();
 
-    if let Some(config_path) = cli.path.as_deref() {
-        let target_path = config_path.deref();
-        if target_path.is_absolute() && metadata(config_path).is_ok() {
+    if let Some(config_path) = cli.path.as_deref().clone() {
+        if config_path.is_absolute() && metadata(config_path).is_ok() {
+            let target_path: &'static Path = config_path.clone();
             return target_path;
         }
     }
     parse_path_input()
 }
 
-pub fn parse_path_input() -> & 'static Path {
+pub fn parse_path_input() -> &'static Path {
     let mut path_input = String::new();
 
     println!("Welcome to FileSorter-Rs");
@@ -34,8 +35,11 @@ pub fn parse_path_input() -> & 'static Path {
 
         match stdin().read_line(&mut path_input) {
             Ok(_) => {
-                path_input = path_input.trim().to_string();
-                let (target_path, is_valid_path) = parse_path_validity(&path_input);
+                let parsed_path = path_input.trim().to_string();
+
+                let target_path: &'static Path = Path::new(parsed_path.as_str());
+                let is_valid_path = target_path.is_absolute() && metadata(parsed_path.as_str()).is_ok();
+
                 if !is_valid_path {
                     println!("Error ::: Invalid Path supplied \n");
                 } else {
@@ -45,11 +49,4 @@ pub fn parse_path_input() -> & 'static Path {
             Err(error) => println!("error: {error}"),
         }
     }
-}
-
-fn parse_path_validity(path_input: &String) -> (&Path, bool) {
-    let target_path = Path::new(path_input);
-    let is_valid_path = target_path.is_absolute() && metadata(path_input).is_ok();
-
-    (target_path, is_valid_path)
 }

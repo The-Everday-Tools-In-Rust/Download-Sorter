@@ -16,3 +16,4 @@ the file extensions
 4. [ ] Categorise pictures according to dates
 5. [ ] Write Tests
 6. [ ] CLI Help message
+7. [ ] Set Path to Log to File from fn `create_and_load_mac_service` in `plist_content`  
