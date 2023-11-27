@@ -10,7 +10,7 @@ use std::thread;
 
 use log::info;
 
-const SERVICE_ID: &str = "homebrew.mxcl.downloads_sorter";
+const SERVICE_ID: &str = "homebrew.mxcl.file_sorter";
 
 fn main() {
     let target_path = cli::parse_path_input();

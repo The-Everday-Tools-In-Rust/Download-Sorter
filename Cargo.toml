@@ -1,5 +1,5 @@
 [package]
-name = "downloads_sorter"
+name = "file_sorter"
 version = "0.1.0"
 authors = ["Timothy Odebunmi <dev.brymes@gmail.com>"]
 edition = "2021"

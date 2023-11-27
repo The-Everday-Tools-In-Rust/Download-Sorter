@@ -1,4 +1,4 @@
-# FileWatcher[WIP]
+# FileSorter[WIP]
 
 A script designed to run as a background service for the purpose of categorising files in a given directory according to
 the file extensions
