@@ -14,19 +14,19 @@ struct Cli {
 }
 
 
-fn parse_cli_args() -> &'static Path {
+fn parse_cli_args() -> PathBuf {
     let cli = Cli::parse();
 
     if let Some(config_path) = cli.path.as_deref().clone() {
         if config_path.is_absolute() && metadata(config_path).is_ok() {
-            let target_path: &'static Path = config_path.clone();
+            let target_path= PathBuf::from(config_path);
             return target_path;
         }
     }
     parse_path_input()
 }
 
-pub fn parse_path_input() -> &'static Path {
+pub fn parse_path_input() -> PathBuf {
     let mut path_input = String::new();
 
     println!("Welcome to FileSorter-Rs");
@@ -37,7 +37,7 @@ pub fn parse_path_input() -> &'static Path {
             Ok(_) => {
                 let parsed_path = path_input.trim().to_string();
 
-                let target_path: &'static Path = Path::new(parsed_path.as_str());
+                let target_path= PathBuf::from(parsed_path.as_str());
                 let is_valid_path = target_path.is_absolute() && metadata(parsed_path.as_str()).is_ok();
 
                 if !is_valid_path {
